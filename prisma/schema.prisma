@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String                @id @default(cuid())
+  email        String                @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  sessions     Session[]
+  projects     Project[]
+  providers    AIProviderConfig[]
+  usage        UsageRecord[]
+  jobs         GenerationJob[]
+  exports      ExportJob[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Project {
+  id              String       @id @default(cuid())
+  userId          String
+  title           String
+  prompt          String
+  projectType     String       @default("short_film")
+  durationMinutes Int          @default(3)
+  language        String       @default("English")
+  visualStyle     String       @default("Photorealistic cinema")
+  aspectRatio     String       @default("16:9")
+  platform        String       @default("Film")
+  audience        String       @default("General")
+  status          String       @default("draft")
+  screenplay      String?
+  isDemoContent   Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenes          Scene[]
+  characters      Character[]
+  assets          Asset[]
+  timeline        Timeline?
+  jobs            GenerationJob[]
+  exports         ExportJob[]
+
+  @@index([userId, updatedAt])
+  @@index([status])
+}
+
+model Scene {
+  id          String   @id @default(cuid())
+  projectId   String
+  number      Int
+  title       String
+  description String
+  location    String   @default("")
+  durationSec Int      @default(30)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shots       Shot[]
+
+  @@unique([projectId, number])
+  @@index([projectId, number])
+}
+
+model Shot {
+  id              String   @id @default(cuid())
+  sceneId         String
+  number          Int
+  title           String
+  prompt          String
+  camera           String   @default("")
+  action           String   @default("")
+  dialogue         String   @default("")
+  durationSec      Int      @default(8)
+  aspectRatio      String   @default("16:9")
+  generationStatus String   @default("idle")
+  mediaAssetId     String?
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  scene            Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  @@unique([sceneId, number])
+  @@index([sceneId, generationStatus])
+}
+
+model Character {
+  id                String   @id @default(cuid())
+  projectId         String
+  name              String
+  description       String
+  personality       String   @default("")
+  appearance        String   @default("")
+  clothing          String   @default("")
+  voicePreferences String   @default("")
+  referenceAssetIds String   @default("[]")
+  relationships     String   @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, name])
+}
+
+model Asset {
+  id          String   @id @default(cuid())
+  projectId   String
+  kind        String
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  storageKey  String   @unique
+  source      String   @default("upload")
+  licenseInfo String   @default("")
+  metadata    String   @default("{}")
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  timelineClips TimelineClip[]
+
+  @@index([projectId, kind, createdAt])
+}
+
+model Timeline {
+  id        String        @id @default(cuid())
+  projectId String        @unique
+  fps       Int           @default(24)
+  width     Int           @default(1920)
+  height    Int           @default(1080)
+  version   Int           @default(1)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clips     TimelineClip[]
+}
+
+model TimelineClip {
+  id         String   @id @default(cuid())
+  timelineId String
+  assetId    String?
+  track      String   @default("video")
+  position   Float
+  sourceIn   Float    @default(0)
+  sourceOut  Float
+  volume     Float    @default(1)
+  transition String   @default("cut")
+  title      String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  timeline   Timeline @relation(fields: [timelineId], references: [id], onDelete: Cascade)
+  asset      Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([timelineId, track, position])
+}
+
+model GenerationJob {
+  id              String   @id @default(cuid())
+  userId          String
+  projectId       String
+  type            String
+  status          String   @default("queued")
+  provider        String   @default("none")
+  providerJobId   String?
+  input           String
+  output          String?
+  progress        Int      @default(0)
+  errorMessage    String?
+  retryCount      Int      @default(0)
+  idempotencyKey  String?
+  isDemo          Boolean  @default(false)
+  usageMetadata   String   @default("{}")
+  createdAt       DateTime @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageRecords    UsageRecord[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId, type])
+}
+
+model AIProviderConfig {
+  id          String   @id @default(cuid())
+  userId      String
+  provider    String
+  capability  String
+  secretEnc   String   @default("")
+  settings    String   @default("{}")
+  enabled     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, capability])
+}
+
+model UsageRecord {
+  id          String   @id @default(cuid())
+  userId      String
+  jobId       String?
+  provider    String
+  capability  String
+  units       Int      @default(0)
+  estimatedCost Float?
+  costCurrency String  @default("USD")
+  metadata    String   @default("{}")
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job         GenerationJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([jobId])
+}
+
+model ExportJob {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String
+  status      String   @default("queued")
+  settings    String   @default("{}")
+  outputKey   String?
+  progress    Int      @default(0)
+  errorMessage String?
+  retryCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
